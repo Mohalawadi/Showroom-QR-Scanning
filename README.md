@@ -25,3 +25,5 @@ If this page is opened on its own, it still reads codes, but the scans stay on t
 - `zxing-reader.js`, `zxing_reader.wasm`: the [zxing-wasm](https://github.com/Sec-ant/zxing-wasm) 3.1.6 reader build (MIT licence, wrapping zxing-cpp under Apache 2.0)
 
 Where the browser has a built-in `BarcodeDetector` (Chrome on Android), the scanner uses it. On iPhone it uses ZXing.
+
+Live at https://mohalawadi.github.io/Showroom-QR-Scanning/

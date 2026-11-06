@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0e0d0c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>neulooksOS Scan</title>
+<style>
+:root{
+  --bg:#0e0d0c;--ink:#f6f2ea;--ink-2:#d9d3c8;--muted:#a59e92;--line:rgba(246,242,234,.18);
+  --cream:#f1ece2;--accent:#c9714f;--ok:#3ccf7e;--ok-ink:#06210f;--warn:#f0b54a;--err:#ff6b5e;--info:#7fb2e6;
+  --glass:rgba(18,17,16,.62);--glass-2:rgba(18,17,16,.82);
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.35 var(--sans);overflow:hidden;overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid var(--cream);outline-offset:2px}
+#stage{position:fixed;inset:0;overflow:hidden;background:#000}
+#v{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform-origin:50% 50%;transition:transform .32s cubic-bezier(.2,.8,.2,1)}
+#hud{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+/* the scan window: everything outside it is dimmed, like WeChat */
+.win{position:absolute;left:50%;top:44%;width:min(72vmin,300px);height:min(72vmin,300px);transform:translate(-50%,-50%);border-radius:14px;box-shadow:0 0 0 200vmax rgba(0,0,0,.42);transition:width .3s,height .3s,top .3s;pointer-events:none}
+.win.wide{width:min(90vw,560px);height:min(42vh,320px);top:42%}
+.win i{position:absolute;width:26px;height:26px;border:3px solid var(--cream);border-radius:3px}
+.win i:nth-child(1){left:-2px;top:-2px;border-right:0;border-bottom:0;border-top-left-radius:14px}
+.win i:nth-child(2){right:-2px;top:-2px;border-left:0;border-bottom:0;border-top-right-radius:14px}
+.win i:nth-child(3){left:-2px;bottom:-2px;border-right:0;border-top:0;border-bottom-left-radius:14px}
+.win i:nth-child(4){right:-2px;bottom:-2px;border-left:0;border-top:0;border-bottom-right-radius:14px}
+.win .sweep{position:absolute;left:6%;right:6%;top:0;height:46px;border-radius:50%;background:linear-gradient(180deg,rgba(60,207,126,0) 0%,rgba(60,207,126,.18) 70%,rgba(60,207,126,.9) 100%);filter:blur(.3px);animation:sweep 2.1s cubic-bezier(.45,.05,.55,.95) infinite}
+.win .sweep::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;border-radius:2px;background:var(--ok);box-shadow:0 0 12px 2px rgba(60,207,126,.7)}
+@keyframes sweep{0%{transform:translateY(-10%);opacity:0}12%{opacity:1}88%{opacity:1}100%{transform:translateY(calc(var(--h,300px) - 40px));opacity:0}}
+.win.hit{box-shadow:0 0 0 200vmax rgba(0,0,0,.42),0 0 0 3px var(--ok) inset}
+.paused .sweep{animation-play-state:paused;opacity:.2}
+.hint{position:absolute;left:0;right:0;text-align:center;font-size:14px;color:var(--ink-2);text-shadow:0 1px 3px rgba(0,0,0,.7);padding:0 24px;pointer-events:none}
+/* top bar */
+.top{position:absolute;left:0;right:0;top:0;padding:calc(var(--st) + 8px) 12px 8px;display:flex;align-items:center;gap:8px;background:linear-gradient(180deg,rgba(0,0,0,.55),rgba(0,0,0,0));z-index:3}
+.top .ttl{flex:1;min-width:0;text-align:center;font-weight:600;letter-spacing:.01em}
+.top .ttl small{display:block;font-weight:400;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ib{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--glass);flex:none}
+.ib svg{width:22px;height:22px}
+.ib[aria-pressed="true"]{background:var(--cream);color:#111}
+.ib[hidden]{display:none}
+/* context pill */
+.ctx{position:absolute;left:50%;transform:translateX(-50%);top:calc(var(--st) + 60px);max-width:calc(100vw - 24px);display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:var(--glass-2);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font-size:13px;z-index:3;white-space:nowrap}
+.ctx b{font-family:var(--mono);font-weight:600}
+.ctx .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.ctx.on .dot{background:var(--ok);box-shadow:0 0 0 3px rgba(60,207,126,.22)}
+.ctx.off .dot{background:var(--warn)}
+.ctx span{overflow:hidden;text-overflow:ellipsis}
+/* zoom pills */
+.zoom{display:flex;gap:6px;padding:4px;border-radius:999px;background:var(--glass);width:max-content;margin:0 auto 2px;align-items:center}
+.zoom button{min-width:40px;height:32px;padding:0 8px;border-radius:999px;font-size:13px;font-weight:600;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.zoom button[aria-pressed="true"]{background:var(--cream);color:#111}
+.zoom .auto{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ok);padding:0 8px 0 2px;font-weight:700}
+/* bottom: modes + tray */
+.bottom{position:absolute;left:0;right:0;bottom:0;z-index:4;padding:0 0 calc(var(--sb) + 8px);background:linear-gradient(0deg,rgba(0,0,0,.7) 40%,rgba(0,0,0,0))}
+.modes{display:flex;gap:4px;overflow-x:auto;touch-action:pan-x;scrollbar-width:none;padding:10px 12px 8px;justify-content:center}
+.modes::-webkit-scrollbar{display:none}
+.modes button{flex:none;padding:8px 13px;border-radius:999px;font-size:13px;font-weight:600;color:var(--ink-2);letter-spacing:.01em}
+.modes button[aria-checked="true"]{background:var(--cream);color:#111}
+.tray{margin:4px 10px 0;border-radius:18px;background:var(--glass-2);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);overflow:hidden}
+.tray-h{display:flex;align-items:center;gap:10px;padding:10px 12px;min-height:56px}
+.tray-h .sum{flex:1;min-width:0}
+.tray-h .sum b{display:block;font-size:14px}
+.tray-h .sum small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{height:38px;padding:0 14px;border-radius:999px;background:var(--cream);color:#111;font-weight:650;font-size:14px;flex:none;display:inline-flex;align-items:center;gap:6px}
+.pill.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.pill svg{width:18px;height:18px}
+.list{list-style:none;margin:0;padding:0 6px 6px;max-height:0;overflow:auto;touch-action:pan-y;-webkit-overflow-scrolling:touch;transition:max-height .28s}
+.tray.open .list{max-height:38vh}
+.list li{display:flex;gap:10px;align-items:flex-start;padding:9px 8px;border-top:1px solid var(--line)}
+.list li .s{width:22px;height:22px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;font-weight:700;margin-top:1px}
+.list li .s svg{width:14px;height:14px}
+.list li .t{flex:1;min-width:0}
+.list li .t b{font-family:var(--mono);font-size:13px;font-weight:600;word-break:break-all}
+.list li .t small{display:block;color:var(--ink-2);font-size:12px;margin-top:2px}
+.list li time{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums;flex:none;margin-top:3px}
+.s.ok{background:var(--ok);color:var(--ok-ink)} .s.row{background:var(--cream);color:#111} .s.extra,.s.warn{background:var(--warn);color:#2a1a00}
+.s.err{background:var(--err);color:#fff} .s.out{background:var(--info);color:#07192b} .s.return{background:var(--info);color:#07192b} .s.sent,.s.info,.s.read{background:rgba(246,242,234,.22);color:var(--ink)}
+.manual{display:none;gap:8px;padding:8px 12px 12px;border-top:1px solid var(--line)}
+.tray.open .manual{display:flex}
+.manual input{flex:1;min-width:0;height:38px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.35);color:var(--ink);padding:0 12px;font:14px var(--mono);-webkit-user-select:text;user-select:text}
+/* gate: start, permission, errors */
+.gate{position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:32px 28px;text-align:center;background:var(--bg)}
+.gate[hidden]{display:none}
+.gate h1{margin:0;font:600 22px/1.25 Georgia,ui-serif,serif;letter-spacing:.005em}
+.gate p{margin:0;color:var(--ink-2);max-width:34ch}
+.gate .logo{width:52px;height:52px;border-radius:14px;background:var(--cream);color:#111;display:grid;place-items:center;font:700 26px Georgia,serif}
+/* result card for row scans */
+.card{position:absolute;left:12px;right:12px;bottom:calc(var(--sb) + 12px);z-index:8;border-radius:20px;background:#191816;box-shadow:0 18px 50px rgba(0,0,0,.6);padding:18px;transform:translateY(120%);transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+.card.show{transform:none}
+.card .k{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.card h2{margin:4px 0 2px;font:600 22px/1.2 Georgia,ui-serif,serif}
+.card p{margin:0 0 14px;color:var(--ink-2)}
+.card .acts{display:flex;gap:8px;flex-wrap:wrap}
+.card .acts .pill{flex:1;justify-content:center;height:46px}
+.flash{position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(circle at var(--fx,50%) var(--fy,50%),rgba(60,207,126,.35),rgba(60,207,126,0) 45%);opacity:0;transition:opacity .4s}
+.flash.on{opacity:1;transition:none}
+.toast{position:absolute;left:50%;top:calc(var(--st) + 108px);transform:translate(-50%,-8px);opacity:0;z-index:9;padding:8px 14px;border-radius:12px;background:var(--glass-2);font-size:13px;transition:.25s;max-width:calc(100vw - 32px);text-align:center;pointer-events:none}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.focus-ring{position:absolute;width:70px;height:70px;margin:-35px 0 0 -35px;border:2px solid var(--cream);border-radius:12px;z-index:2;pointer-events:none;opacity:0;transform:scale(1.3);transition:transform .25s,opacity .6s}
+.focus-ring.on{opacity:1;transform:scale(1);transition:transform .25s,opacity 0s}
+@media (min-width:900px){.tray{max-width:560px;margin:4px auto 0}.modes{justify-content:center}}
+@media (prefers-reduced-motion:reduce){.win .sweep{animation:none;top:50%;opacity:.8}#v{transition:none}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="v" playsinline muted autoplay></video>
+  <canvas id="hud"></canvas>
+  <div class="flash" id="flash"></div>
+  <div class="win" id="win"><i></i><i></i><i></i><i></i><div class="sweep"></div></div>
+  <div class="hint" id="hint">Point at a row QR or a hanger barcode</div>
+  <div class="focus-ring" id="ring"></div>
+
+  <header class="top">
+    <button class="ib" id="bClose" aria-label="Close the scanner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="ttl">neulooksOS Scan<small id="sub">DIGITEX HQ showroom</small></div>
+    <button class="ib" id="bTorch" aria-label="Torch" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M8 2h8l-1 6H9L8 2zM9 8h6v13a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1V8z"/><path d="M12 12v3" stroke-linecap="round"/></svg></button>
+    <button class="ib" id="bFlip" aria-label="Switch camera" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><path d="M9 13a3 3 0 0 1 5.2-2M15 13a3 3 0 0 1-5.2 2M14 9v2h-2M10 17v-2h2"/></svg></button>
+  </header>
+  <div class="ctx" id="ctx"><i class="dot"></i><span id="ctxT">Connecting to the showroom twin…</span></div>
+  <div class="bottom">
+    <div class="zoom" id="zoom" role="group" aria-label="Zoom"></div>
+    <nav class="modes" id="modes" role="radiogroup" aria-label="What a scan does"></nav>
+    <section class="tray" id="tray">
+      <div class="tray-h">
+        <button class="sum" id="bTray" aria-expanded="false" style="text-align:left"><b id="sumT">Ready</b><small id="sumS">Codes are read as soon as they are in view</small></button>
+        <button class="pill ghost" id="bFinish" hidden>Finish check</button>
+        <button class="pill" id="bDone">Done</button>
+      </div>
+      <ul class="list" id="list" aria-live="polite"></ul>
+      <form class="manual" id="manual" autocomplete="off"><input id="manualIn" placeholder="Type a code if a label will not scan" enterkeyhint="send" autocapitalize="characters" spellcheck="false"><button class="pill" type="submit">Add</button></form>
+    </section>
+  </div>
+
+  <div class="card" id="card" role="dialog" aria-live="assertive"></div>
+  <div class="toast" id="toast" role="status"></div>
+  <div class="gate" id="gate"><div class="logo">n</div><h1>Starting the camera…</h1><p>Allow camera access when your phone asks.</p></div>
+</div>
+
+<script>
+'use strict';
+// ======================================================================================
+// neulooksOS Scan: a live QR and barcode scanner for the DIGITEX showroom twin.
+// The twin opens this page in its own window (the twin's page in Claude cannot use the camera),
+// and every code read here is handed back to the twin as it is scanned.
+// ======================================================================================
+const $ = s => document.querySelector(s);
+const V = $('#v'), HUD = $('#hud'), hctx = HUD.getContext('2d');
+const P = new URLSearchParams(location.hash.slice(1));
+const CH = P.get('ch') || '';
+const TWIN_HOME = 'https://claude.ai/artifact/99y9tPkhyaAkLqWLQER2jW';
+const MODES = [['row', 'Open row'], ['hang', 'Hang and check'], ['out', 'Take out'], ['return', 'Return'], ['find', 'Find']];
+const MODE_HINT = {
+  row: 'Point at the QR on a row label',
+  hang: 'Hold the hanger barcodes in view: several at once is fine',
+  out: 'Scan each hanger going out with a client',
+  return: 'Scan each hanger coming back',
+  find: 'Scan a hanger to open its spec card'
+};
+const st = {
+  mode: MODES.some(m => m[0] === P.get('mode')) ? P.get('mode') : 'row',
+  row: (P.get('row') || '').toUpperCase(), label: '', zone: '', counts: null,
+  linked: false, twinGone: false, items: [], seq: 0, done: new Set()
+};
+
+// ---------- link with the twin ----------
+const twin = window.opener && !window.opener.closed ? window.opener : null;
+let twinOrigin = null;
+const TWIN_ORIGINS = /^https:\/\/([a-z0-9-]+\.)*claudeusercontent\.com$|^https:\/\/claude\.ai$|^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$|^null$/;
+function toTwin(msg) {
+  if (!twin) return false;
+  try { if (twin.closed) { twinLost(); return false; } twin.postMessage(Object.assign({ nl: 'scan', v: 1, ch: CH }, msg), twinOrigin && twinOrigin !== 'null' ? twinOrigin : '*'); return true; } catch (e) { return false; }
+}
+function twinLost() { if (st.twinGone) return; st.twinGone = true; st.linked = false; renderCtx(); }
+window.addEventListener('message', e => {
+  const d = e.data; if (!d || d.nl !== 'twin' || (CH && d.ch !== CH)) return;
+  if (twin && e.source !== twin) return;
+  if (!TWIN_ORIGINS.test(e.origin)) return;
+  twinOrigin = e.origin; const first = !st.linked; st.linked = true; st.twinGone = false;
+  if (d.type === 'hello' || d.type === 'state') {
+    st.row = d.row || ''; st.label = d.label || ''; st.zone = d.zone || ''; st.counts = d.counts || null;
+    if (first) { st.items.filter(i => i.state === 'sent').forEach(i => toTwin({ type: 'code', id: i.id, raw: i.raw, mode: i.mode })); }
+    renderCtx(); renderTray();
+  }
+  if (d.type === 'result') onResult(d);
+  if (d.type === 'close') closeNow();
+  if (d.type === 'notice' && d.text) toast(d.text);
+});
+let helloN = 0;
+function sayReady() { if (st.linked || !twin || helloN++ > 60) return; toTwin({ type: 'ready', mode: st.mode }); setTimeout(sayReady, 500); }
+
+// ---------- camera ----------
+const cam = { stream: null, track: null, caps: {}, hw: null, devices: [], idx: -1, running: false, tried: false };
+async function startCamera(deviceId) {
+  stopCamera();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { gate('nocam'); return; }
+  const video = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
+  if (deviceId) video.deviceId = { exact: deviceId }; else video.facingMode = { ideal: 'environment' };
+  try { cam.stream = await navigator.mediaDevices.getUserMedia({ video, audio: false }); }
+  catch (e) {
+    if (deviceId) { return startCamera(null); }
+    gate(e && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? 'denied' : e && (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') ? 'none' : 'error', e); return;
+  }
+  cam.track = cam.stream.getVideoTracks()[0];
+  cam.caps = (cam.track.getCapabilities && cam.track.getCapabilities()) || {};
+  V.srcObject = cam.stream; try { await V.play(); } catch (e) { }
+  try { if (cam.caps.focusMode && cam.caps.focusMode.includes('continuous')) await cam.track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) { }
+  cam.hw = cam.caps.zoom && cam.caps.zoom.max > cam.caps.zoom.min ? cam.caps.zoom : null;
+  $('#bTorch').hidden = !cam.caps.torch; $('#bTorch').setAttribute('aria-pressed', 'false');
+  cam.running = true; gate(null); setZoom(1, .5, .5, true); renderZoom();
+  await listCameras();
+  // iPhones: the multi-lens back camera switches to macro on its own, which reads small hanger tags up close
+  if (!cam.tried && !deviceId) { cam.tried = true; const best = cam.devices.findIndex(d => /back (triple|dual wide) camera/i.test(d.label)); const cur = cam.track.getSettings ? cam.track.getSettings().deviceId : null; if (best >= 0 && cam.devices[best].deviceId !== cur) { cam.idx = best; return startCamera(cam.devices[best].deviceId); } }
+  wakeLock(); loop();
+}
+function stopCamera() { cam.running = false; if (cam.stream) cam.stream.getTracks().forEach(t => t.stop()); cam.stream = null; cam.track = null; }
+async function listCameras() {
+  try {
+    const all = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    const back = all.filter(d => /back|rear|environment|后|背/i.test(d.label));
+    cam.devices = back.length ? back : all;
+    const cur = cam.track && cam.track.getSettings ? cam.track.getSettings().deviceId : null;
+    cam.idx = Math.max(0, cam.devices.findIndex(d => d.deviceId === cur));
+    $('#bFlip').hidden = cam.devices.length < 2;
+  } catch (e) { $('#bFlip').hidden = true; }
+}
+let wl = null;
+async function wakeLock() { try { if ('wakeLock' in navigator && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } } catch (e) { } }
+
+// ---------- geometry: video pixels to screen, with the digital zoom ----------
+const zm = { z: 1, fx: .5, fy: .5, manual: false, auto: false, autoAt: 0 };
+function frameGeo() {
+  const W = innerWidth, H = innerHeight, vw = V.videoWidth || 1, vh = V.videoHeight || 1;
+  const s = Math.max(W / vw, H / vh); return { W, H, vw, vh, s, dx: (W - vw * s) / 2, dy: (H - vh * s) / 2 };
+}
+function digital() { return cam.hw ? 1 : zm.z; }
+function v2s(x, y, g) { g = g || frameGeo(); const bx = g.dx + x * g.s, by = g.dy + y * g.s, z = digital(), ox = zm.fx * g.W, oy = zm.fy * g.H; return { x: ox + (bx - ox) * z, y: oy + (by - oy) * z }; }
+function s2v(x, y, g) { g = g || frameGeo(); const z = digital(), ox = zm.fx * g.W, oy = zm.fy * g.H; const bx = ox + (x - ox) / z, by = oy + (y - oy) / z; return { x: (bx - g.dx) / g.s, y: (by - g.dy) / g.s }; }
+function visibleRect() {
+  const g = frameGeo(); const a = s2v(0, 0, g), b = s2v(g.W, g.H, g);
+  const x = Math.max(0, a.x), y = Math.max(0, a.y); return { x, y, w: Math.min(g.vw, b.x) - x, h: Math.min(g.vh, b.y) - y };
+}
+function zMax() { return cam.hw ? Math.min(cam.hw.max, 10) : 5; }
+async function setZoom(z, fx, fy, instant) {
+  z = Math.max(1, Math.min(zMax(), z)); zm.z = z;
+  if (cam.hw) {
+    V.style.transform = ''; const t = Math.max(cam.hw.min, Math.min(cam.hw.max, z * Math.max(1, cam.hw.min)));
+    try { await cam.track.applyConstraints({ advanced: [{ zoom: t }] }); } catch (e) { }
+  } else {
+    if (fx != null) { zm.fx = Math.max(0, Math.min(1, fx)); zm.fy = Math.max(0, Math.min(1, fy)); }
+    if (z <= 1.001) { zm.fx = .5; zm.fy = .5; }
+    V.style.transition = instant ? 'none' : ''; V.style.transformOrigin = `${zm.fx * 100}% ${zm.fy * 100}%`; V.style.transform = z > 1.001 ? `scale(${z})` : '';
+  }
+  renderZoom();
+}
+function renderZoom() {
+  const max = zMax(); const steps = [1, 2, 4].filter(s => s <= max + .01); let act = steps[0]; steps.forEach(s => { if (zm.z >= s - .05) act = s; });
+  $('#zoom').innerHTML = steps.map(s => { const on = s === act; const lab = on && Math.abs(zm.z - s) > .05 ? zm.z.toFixed(1) : String(s); return `<button type="button" data-z="${s}" aria-pressed="${on}">${lab}×</button>`; }).join('') + (zm.auto ? '<span class="auto">Auto</span>' : '');
+}
+
+// ---------- decoding engines: the phone's own detector when there is one, else ZXing in a worker ----------
+const NATIVE = ['qr_code', 'data_matrix', 'aztec', 'code_128', 'code_39', 'code_93', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar'];
+const NATIVE_NAME = { qr_code: 'QRCode', data_matrix: 'DataMatrix', aztec: 'Aztec', code_128: 'Code128', code_39: 'Code39', code_93: 'Code93', ean_13: 'EAN13', ean_8: 'EAN8', upc_a: 'UPCA', upc_e: 'UPCE', itf: 'ITF', codabar: 'Codabar' };
+const eng = { native: null, worker: null, wReady: false, wFail: false, busy: false, n: 0, id: 0, pend: null, cand: null, cands: [], ci: 0, fps: 0, last: 0 };
+async function initEngines() {
+  try { if ('BarcodeDetector' in window) { const ok = await BarcodeDetector.getSupportedFormats(); const f = NATIVE.filter(x => ok.includes(x)); if (f.includes('qr_code')) eng.native = new BarcodeDetector({ formats: f }); } } catch (e) { eng.native = null; }
+  try {
+    eng.worker = new Worker('scan-worker.js');
+    eng.worker.onmessage = e => { const d = e.data; if (d.type === 'ready') eng.wReady = true; else if (d.type === 'fail') { eng.wFail = true; if (!eng.native) gate('engine', d.message); } else if (d.type === 'res' && eng.pend && d.id === eng.pend.id) { const p = eng.pend; eng.pend = null; eng.busy = false; onDecoded(p, d.res || []); } };
+    eng.worker.onerror = () => { eng.wFail = true; eng.busy = false; if (!eng.native) gate('engine'); };
+  } catch (e) { eng.wFail = true; }
+}
+const grab = document.createElement('canvas'); const gctx = grab.getContext('2d', { willReadFrequently: true });
+function planPass() {
+  const vis = visibleRect(); if (vis.w < 8 || vis.h < 8) return null; const n = eng.n++;
+  const now = performance.now(); eng.cands = eng.cands.filter(k => now - k.t < 1600);
+  const c = eng.cands.length && n % 2 === 1 ? eng.cands[eng.ci++ % eng.cands.length] : null;
+  if (c) { const m = c.size * .35; const r = clampRect({ x: c.cx - c.size / 2 - m, y: c.cy - c.size / 2 - m, w: c.size + 2 * m, h: c.size + 2 * m }); const up = Math.min(3, Math.max(1.5, 900 / Math.max(r.w, r.h))); return { name: 'cand', r, k: up, engine: 'worker' }; }
+  const whole = { x: 0, y: 0, w: V.videoWidth, h: V.videoHeight };
+  if (eng.native && eng.wReady && n % 4 === 3) return { name: 'scout', r: whole, k: Math.min(1, 1280 / Math.max(whole.w, whole.h)), engine: 'worker' };
+  // cycle: the whole camera frame (a code just off the screen edge still reads), what is on screen at full detail, and the centre at full detail (far codes)
+  const k3 = (n >> 1) % 3;
+  if (k3 === 1) return { name: 'view', r: vis, k: Math.min(1, 1600 / Math.max(vis.w, vis.h)) };
+  if (k3 === 2) { const r = { x: vis.x + vis.w * .2, y: vis.y + vis.h * .25, w: vis.w * .6, h: vis.h * .5 }; return { name: 'roi', r, k: Math.min(1, 1280 / Math.max(r.w, r.h)) }; }
+  return { name: 'full', r: whole, k: Math.min(1, 1280 / Math.max(whole.w, whole.h)) };
+}
+function clampRect(r) { const vw = V.videoWidth, vh = V.videoHeight; const x = Math.max(0, r.x), y = Math.max(0, r.y); return { x, y, w: Math.max(8, Math.min(vw, r.x + r.w) - x), h: Math.max(8, Math.min(vh, r.y + r.h) - y) }; }
+async function runPass() {
+  const p = planPass(); if (!p) return;
+  const ow = Math.max(8, Math.round(p.r.w * p.k)), oh = Math.max(8, Math.round(p.r.h * p.k));
+  if (grab.width !== ow || grab.height !== oh) { grab.width = ow; grab.height = oh; }
+  gctx.imageSmoothingEnabled = true; gctx.imageSmoothingQuality = p.k > 1 ? 'high' : 'low'; gctx.drawImage(V, p.r.x, p.r.y, p.r.w, p.r.h, 0, 0, ow, oh);
+  p.sx = p.r.w / ow; p.sy = p.r.h / oh;
+  const useNative = eng.native && p.engine !== 'worker';
+  if (useNative) {
+    eng.busy = true;
+    try { const out = await eng.native.detect(grab); onDecoded(p, out.map(b => ({ text: b.rawValue, format: NATIVE_NAME[b.format] || b.format, valid: !!b.rawValue, pts: (b.cornerPoints && b.cornerPoints.length === 4 ? b.cornerPoints : rectPts(b.boundingBox)) }))); }
+    catch (e) { }
+    eng.busy = false; return;
+  }
+  if (!eng.worker || !eng.wReady) return;
+  const img = gctx.getImageData(0, 0, ow, oh); p.id = ++eng.id; eng.pend = p; eng.busy = true;
+  eng.worker.postMessage({ type: 'frame', id: p.id, w: ow, h: oh, buf: img.data.buffer }, [img.data.buffer]);
+  setTimeout(() => { if (eng.pend === p) { eng.pend = null; eng.busy = false; } }, 1500);
+}
+function rectPts(b) { return [{ x: b.x, y: b.y }, { x: b.x + b.width, y: b.y }, { x: b.x + b.width, y: b.y + b.height }, { x: b.x, y: b.y + b.height }]; }
+let paused = false;
+function loop() {
+  if (!cam.running) return;
+  const go = () => { if (!cam.running) return; if (!paused && !eng.busy && V.readyState >= 2 && V.videoWidth) runPass(); loop(); };
+  if (V.requestVideoFrameCallback) V.requestVideoFrameCallback(go); else setTimeout(go, 40);
+}
+
+// ---------- what a read means ----------
+const seenLinear = new Map(), recent = new Map(); const marks = [];
+function onDecoded(p, res) {
+  const now = performance.now(); eng.fps = eng.last ? .8 * eng.fps + .2 * (1000 / Math.max(1, now - eng.last)) : 0; eng.last = now;
+  const list = res.map(r => ({ ...r, pts: r.pts.map(q => ({ x: p.r.x + q.x * p.sx, y: p.r.y + q.y * p.sy })) }));
+  const good = list.filter(r => r.valid && r.text);
+  // codes that are there but did not read cleanly: decode them again from an enlarged crop, and pull the camera in on a lone 2D code
+  const bad = list.filter(r => !r.valid && r.format && r.format !== 'None').map(boxOf).filter(b => !good.some(g => near(boxOf(g), b)));
+  if (bad.length && p.name !== 'cand') { bad.forEach(b => { b.t = now; const i = eng.cands.findIndex(k => near(k, b)); if (i >= 0) eng.cands[i] = b; else eng.cands.push(b); mark(b.pts, 'cand'); }); if (eng.cands.length > 6) eng.cands.splice(0, eng.cands.length - 6); }
+  const twoD = bad.filter(b => /QR|DataMatrix|Aztec/i.test(b.r.format));
+  if (twoD.length && !good.length) autoZoom(twoD.sort((a, b) => b.size - a.size)[0]);
+  if (p.name === 'cand' && good.length) eng.cands = eng.cands.filter(k => !good.some(g => near(boxOf(g), k)));
+  good.forEach(r => consider(r, now));
+  if (!good.length && !bad.length && zm.auto && !cardOpen && now - zm.autoAt > 2600) { zm.auto = false; setZoom(1); }
+}
+function near(a, b) { return Math.hypot(a.cx - b.cx, a.cy - b.cy) < Math.max(a.size, b.size) * .6; }
+function boxOf(r) { const xs = r.pts.map(q => q.x), ys = r.pts.map(q => q.y); const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys); return { pts: r.pts, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, size: Math.max(x1 - x0, y1 - y0, 12), r }; }
+// WeChat-style: a code that is in view but too small to read pulls the camera in towards it
+function autoZoom(c) {
+  if (zm.manual) return; const g = frameGeo(); const side = Math.min(g.vw, g.vh); const shown = c.size * g.s * digital();
+  if (shown > Math.min(g.W, g.H) * .3) return;
+  const target = Math.min(zMax(), Math.max(zm.z * 1.5, (Math.min(g.W, g.H) * .42) / (c.size * g.s)));
+  if (target < zm.z * 1.15) return;
+  const s = v2s(c.cx, c.cy, g); const fx = (g.dx + c.cx * g.s) / g.W, fy = (g.dy + c.cy * g.s) / g.H;
+  zm.auto = true; zm.autoAt = performance.now(); setZoom(target, fx, fy); pulseRing(s.x, s.y);
+}
+function lockOn(b) {
+  // a small code that has just been read: glide towards it so the person sees what was read
+  if (zm.manual) return; const g = frameGeo(); const shown = b.size * g.s * digital(); if (shown > Math.min(g.W, g.H) * .28) return;
+  zm.auto = true; zm.autoAt = performance.now(); setZoom(Math.min(zMax(), Math.max(1.6, zm.z * 1.4)), (g.dx + b.cx * g.s) / g.W, (g.dy + b.cy * g.s) / g.H);
+}
+function classify(raw) {
+  const v = String(raw || '').trim(); const h = v.indexOf('#'); const frag = h >= 0 ? v.slice(h + 1) : v; let m;
+  if ((m = /^NL-ROW-([A-Za-z0-9]+)$/i.exec(frag))) return { kind: 'row', id: m[1].toUpperCase() };
+  if ((m = /(?:^|[#?&])row[-=]([A-Za-z0-9]+)/.exec(v))) return { kind: 'row', id: m[1].toUpperCase() };
+  if ((m = /(?:^|[#?&])hanger[-=]([A-Za-z0-9-]+)/.exec(v))) return { kind: 'code', id: m[1] };
+  return { kind: 'code', id: frag };
+}
+function consider(r, now) {
+  const two = /QR|DataMatrix|Aztec/i.test(r.format || '');
+  if (!two) { const prev = seenLinear.get(r.text); seenLinear.set(r.text, now); if (!prev || now - prev > 1500) { mark(r.pts, 'cand'); return; } } // a printed barcode must read twice before it counts
+  const c = classify(r.text); const b = boxOf(r);
+  if (c.kind === 'code' && st.mode === 'hang' && st.done.has(`${st.row || '-'}|${c.id}`)) { mark(r.pts, 'dup'); return; }
+  const key = `${c.kind}|${c.id}|${st.mode}`; const last = recent.get(key);
+  if (last && now - last < 3000) { mark(r.pts, 'dup'); return; }
+  if (cardOpen && c.kind === 'row') { mark(r.pts, 'dup'); return; }
+  recent.set(key, now); mark(r.pts, c.kind === 'row' ? 'row' : 'ok'); hit(v2s(b.cx, b.cy));
+  if (st.mode === 'row' || st.mode === 'find' || c.kind === 'row') lockOn(b);
+  accept(r.text, c, r.format);
+}
+function accept(raw, c, format) {
+  const mode = st.mode === 'row' && c.kind === 'code' ? 'find' : st.mode;
+  const it = { id: ++st.seq, raw, kind: c.kind, code: c.id, mode, row: c.kind === 'row' ? c.id : st.row, format: format || '', at: Date.now(), state: twin ? 'sent' : 'read', text: c.kind === 'row' ? `Row ${c.id}` : '' };
+  st.items.unshift(it); if (st.items.length > 300) st.items.length = 300;
+  if (c.kind === 'row') { st.row = c.id; st.label = ''; st.counts = null; }
+  else if (mode === 'hang') st.done.add(`${st.row || '-'}|${c.id}`);
+  const sent = toTwin({ type: 'code', id: it.id, raw, kind: c.kind, code: c.id, mode, format: it.format });
+  if (!sent) { it.state = 'read'; it.text = c.kind === 'row' ? `Row ${c.id} · open the twin to see it` : 'Read on this phone only'; }
+  renderCtx(); renderTray();
+  if (c.kind === 'row' && st.mode === 'row') showRowCard(it);
+  else if (c.kind === 'row') toast(`Now scanning into row ${c.id}`);
+  else if (mode === 'find') showFindCard(it);
+}
+function onResult(d) {
+  const it = st.items.find(i => i.id === d.id); if (!it) return;
+  it.state = d.state || 'ok'; it.text = d.text || it.text; if (d.name) it.name = d.name;
+  if (d.state === 'err' && it.kind === 'code' && it.mode === 'hang') st.done.delete(`${st.row || '-'}|${it.code}`);
+  if (cardOpen && cardItem === it.id) updateCard(it);
+  renderTray();
+}
+
+// ---------- feedback ----------
+let actx = null;
+let tapped = false;
+function unlockAudio() { tapped = true; try { if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) { } }
+function beep(f = 1760, ms = 70) { try { if (!actx || actx.state !== 'running') return; const o = actx.createOscillator(), gn = actx.createGain(); o.type = 'sine'; o.frequency.value = f; gn.gain.setValueAtTime(.0001, actx.currentTime); gn.gain.exponentialRampToValueAtTime(.25, actx.currentTime + .01); gn.gain.exponentialRampToValueAtTime(.0001, actx.currentTime + ms / 1000); o.connect(gn).connect(actx.destination); o.start(); o.stop(actx.currentTime + ms / 1000 + .02); } catch (e) { } }
+function hit(p) {
+  beep(); try { if (tapped && navigator.vibrate) navigator.vibrate(35); } catch (e) { }
+  const f = $('#flash'); f.style.setProperty('--fx', p.x + 'px'); f.style.setProperty('--fy', p.y + 'px'); f.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove('on')));
+  const w = $('#win'); w.classList.add('hit'); setTimeout(() => w.classList.remove('hit'), 260);
+}
+function mark(pts, kind) { marks.push({ pts, kind, t: performance.now() }); if (marks.length > 40) marks.splice(0, marks.length - 40); drawHUD(); }
+let hudRAF = 0;
+function drawHUD() {
+  if (hudRAF) return; hudRAF = requestAnimationFrame(() => {
+    hudRAF = 0; const dpr = devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+    if (HUD.width !== Math.round(W * dpr) || HUD.height !== Math.round(H * dpr)) { HUD.width = Math.round(W * dpr); HUD.height = Math.round(H * dpr); }
+    hctx.setTransform(dpr, 0, 0, dpr, 0, 0); hctx.clearRect(0, 0, W, H); const now = performance.now(); const g = frameGeo(); let live = false;
+    for (let i = marks.length - 1; i >= 0; i--) {
+      const m = marks[i]; const life = m.kind === 'cand' ? 450 : 900; const a = 1 - (now - m.t) / life; if (a <= 0) { marks.splice(i, 1); continue; } live = true;
+      const q = m.pts.map(p => v2s(p.x, p.y, g)); const cx = q.reduce((s, p) => s + p.x, 0) / 4, cy = q.reduce((s, p) => s + p.y, 0) / 4;
+      const col = m.kind === 'ok' ? '60,207,126' : m.kind === 'row' ? '241,236,226' : m.kind === 'dup' ? '200,196,188' : '241,236,226';
+      hctx.globalAlpha = Math.max(0, a); hctx.lineWidth = 2.5; hctx.strokeStyle = `rgba(${col},${m.kind === 'cand' ? .7 : .95})`; hctx.setLineDash(m.kind === 'cand' ? [6, 5] : []);
+      hctx.beginPath(); q.forEach((p, k) => k ? hctx.lineTo(p.x, p.y) : hctx.moveTo(p.x, p.y)); hctx.closePath(); hctx.stroke(); hctx.setLineDash([]);
+      if (m.kind !== 'cand') {
+        const r = 15 + (1 - a) * 4; hctx.fillStyle = `rgba(${m.kind === 'ok' ? '60,207,126' : m.kind === 'row' ? '241,236,226' : '120,116,110'},.96)`; hctx.beginPath(); hctx.arc(cx, cy, r, 0, Math.PI * 2); hctx.fill();
+        hctx.strokeStyle = m.kind === 'row' ? '#111' : '#fff'; hctx.lineWidth = 3; hctx.lineCap = 'round'; hctx.lineJoin = 'round'; hctx.beginPath(); hctx.moveTo(cx - 6, cy + .5); hctx.lineTo(cx - 1.5, cy + 5); hctx.lineTo(cx + 7, cy - 5); hctx.stroke();
+      }
+    }
+    hctx.globalAlpha = 1; if (live) drawHUD();
+  });
+}
+function pulseRing(x, y) { const r = $('#ring'); r.style.left = x + 'px'; r.style.top = y + 'px'; r.classList.add('on'); setTimeout(() => r.classList.remove('on'), 380); }
+let toastT = 0;
+function toast(t) { const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2200); }
+
+// ---------- cards ----------
+let cardOpen = false, cardItem = 0;
+function showRowCard(it) {
+  cardOpen = true; cardItem = it.id; paused = true; document.body.classList.add('paused');
+  const c = $('#card'); c.innerHTML = cardHTML(it); c.classList.add('show');
+}
+function showFindCard(it) { if (!twin) { toast(`${it.code} read`); return; } cardOpen = true; cardItem = it.id; paused = true; document.body.classList.add('paused'); const c = $('#card'); c.innerHTML = cardHTML(it); c.classList.add('show'); }
+function cardHTML(it) {
+  if (it.kind === 'row') {
+    const lab = st.label ? esc(st.label) : '';
+    const sub = it.state === 'err' ? esc(it.text) : st.linked ? (lab ? `${lab}${st.zone ? ' · ' + esc(st.zone) : ''}` : 'Opening it in the twin…') : twin ? 'Waiting for the twin…' : 'This scanner was opened on its own, so the twin is not linked. Open the twin and use its Scan button to record scans.';
+    return `<div class="k">Row</div><h2 class="mono">${esc(it.code)}</h2><p>${sub}</p><div class="acts">${it.state === 'err' ? '<button class="pill ghost" data-c="again">Scan again</button>' : `<button class="pill" data-c="hang">Scan its hangers</button><button class="pill ghost" data-c="show">${twin ? 'Show the row' : 'Open the twin'}</button>`}</div>`;
+  }
+  return `<div class="k">Hanger</div><h2 class="mono">${esc(it.code)}</h2><p>${esc(it.text || 'Opening its spec card in the twin…')}</p><div class="acts"><button class="pill" data-c="show">Show it in the twin</button><button class="pill ghost" data-c="again">Scan another</button></div>`;
+}
+function updateCard(it) { const c = $('#card'); if (cardOpen) c.innerHTML = cardHTML(it); }
+function hideCard() { cardOpen = false; cardItem = 0; paused = false; document.body.classList.remove('paused'); $('#card').classList.remove('show'); if (zm.auto) { zm.auto = false; setZoom(1); } }
+$('#card').addEventListener('click', e => {
+  const b = e.target.closest('[data-c]'); if (!b) return; const a = b.dataset.c;
+  if (a === 'hang') { hideCard(); setMode('hang'); toast(`Scanning hangers into ${st.row}`); }
+  else if (a === 'again') hideCard();
+  else if (a === 'show') { if (!twin) { location.href = TWIN_HOME; return; } finishAndClose(); }
+});
+
+// ---------- rendering ----------
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function renderModes() { $('#modes').innerHTML = MODES.map(([k, l]) => `<button type="button" role="radio" aria-checked="${st.mode === k}" data-m="${k}">${l}</button>`).join(''); }
+function setMode(m) {
+  st.mode = m; renderModes(); renderCtx(); renderTray(); toTwin({ type: 'mode', mode: m });
+  const w = $('#win'); w.classList.toggle('wide', m === 'hang' || m === 'out' || m === 'return'); placeHint();
+  const sel = $(`#modes [data-m="${m}"]`); if (sel && sel.scrollIntoView) sel.scrollIntoView({ inline: 'center', block: 'nearest' });
+}
+function placeHint() { const w = $('#win').getBoundingClientRect(); const h = $('#hint'); h.textContent = MODE_HINT[st.mode]; h.style.top = (w.bottom + 16) + 'px'; $('#win').style.setProperty('--h', w.height + 'px'); }
+function renderCtx() {
+  const el = $('#ctx'), t = $('#ctxT'); el.classList.toggle('on', st.linked); el.classList.toggle('off', !st.linked);
+  if (!twin) { t.innerHTML = 'Not linked to the twin · scans stay on this phone'; return; }
+  if (st.twinGone) { t.innerHTML = 'The twin was closed · reopen it to record scans'; return; }
+  if (!st.linked) { t.innerHTML = 'Connecting to the showroom twin…'; return; }
+  if (st.row) { const c = st.counts; t.innerHTML = `<b>${esc(st.row)}</b>${st.label ? ` · ${esc(st.label)}` : ''}${c ? ` · ${c.ok} of ${c.planned} checked${c.extra ? ` · ${c.extra} extra` : ''}` : ''}`; return; }
+  t.innerHTML = st.mode === 'hang' ? 'Linked to the twin · scan a row label first' : 'Linked to the showroom twin';
+}
+const ICON = { ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>', err: '!', extra: '!', warn: '!', row: 'R', out: '↑', return: '↓', sent: '…', info: 'i', read: '·' };
+function renderTray() {
+  const items = st.items; const mine = items.filter(i => i.kind === 'code' && i.mode === st.mode && (st.mode !== 'hang' || i.row === st.row));
+  $('#sumT').textContent = mine.length ? (st.mode === 'hang' && st.row ? `${mine.length} scanned into ${st.row}` : st.mode === 'out' ? `${mine.length} taken out` : st.mode === 'return' ? `${mine.length} returned` : `${mine.length} scanned`) : st.mode === 'row' ? 'Scan a row label' : st.mode === 'hang' && !st.row ? 'Scan a row label first' : 'Ready';
+  const last = items[0]; $('#sumS').textContent = last ? `${last.kind === 'row' ? 'Row ' + last.code : last.code}${last.text && last.kind !== 'row' ? ' · ' + last.text : ''}` : 'Codes are read as soon as they are in view';
+  $('#bFinish').hidden = !(st.mode === 'hang' && st.row && st.linked);
+  $('#list').innerHTML = items.slice(0, 120).map(i => `<li><span class="s ${esc(i.state)}">${ICON[i.state] || '·'}</span><span class="t"><b>${esc(i.kind === 'row' ? 'NL-ROW-' + i.code : i.code)}</b><small>${esc(i.text || (i.state === 'sent' ? 'Sent to the twin' : ''))}${i.name ? ' · ' + esc(i.name) : ''}</small></span><time>${new Date(i.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time></li>`).join('');
+}
+const GATE = {
+  start: ['Starting the camera…', 'Allow camera access when your phone asks.'],
+  denied: ['Camera access is off', 'Allow the camera for this page: on iPhone, Settings › Safari › Camera, or tap the aA icon › Website Settings. Then reload.'],
+  none: ['No camera found', 'This device has no camera the scanner can use.'],
+  nocam: ['This browser cannot open the camera here', 'Open this page in Safari or Chrome over a secure (https) address.'],
+  engine: ['The code reader did not load', 'Check the connection and reload the page.'],
+  error: ['The camera could not start', 'Close other apps using the camera, then reload.']
+};
+function gate(kind, err) {
+  const g = $('#gate'); if (!kind) { g.hidden = true; return; }
+  const [h, p] = GATE[kind] || GATE.error; g.innerHTML = `<div class="logo">n</div><h1>${h}</h1><p>${p}</p>${kind !== 'start' ? '<button class="pill" id="bRetry">Try again</button>' : ''}${twin ? '<button class="pill ghost" id="bBack">Back to the twin</button>' : ''}`; g.hidden = false;
+  const r = $('#bRetry'); if (r) r.onclick = () => { gate('start'); startCamera(); };
+  const b = $('#bBack'); if (b) b.onclick = finishAndClose;
+}
+
+// ---------- closing ----------
+function finishAndClose() {
+  toTwin({ type: 'done', items: st.items.filter(i => i.state === 'sent').map(i => ({ id: i.id, raw: i.raw, mode: i.mode })) });
+  setTimeout(closeNow, 120);
+}
+function closeNow() { stopCamera(); try { window.close(); } catch (e) { } setTimeout(() => { if (!window.closed) { gate(null); const c = $('#card'); cardOpen = true; c.innerHTML = '<div class="k">Done</div><h2>You can close this tab</h2><p>Your scans are with the twin.</p>'; c.classList.add('show'); } }, 300); }
+
+// ---------- input ----------
+['pointerdown', 'touchend', 'click'].forEach(ev => document.addEventListener(ev, unlockAudio, { capture: true, passive: true }));
+$('#modes').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (b) setMode(b.dataset.m); });
+$('#zoom').addEventListener('click', e => { const b = e.target.closest('[data-z]'); if (!b) return; const z = +b.dataset.z; zm.manual = z > 1; zm.auto = false; setZoom(z, .5, .5); });
+$('#bClose').onclick = finishAndClose; $('#bDone').onclick = finishAndClose;
+$('#bTray').onclick = () => { const t = $('#tray'); const o = !t.classList.contains('open'); t.classList.toggle('open', o); $('#bTray').setAttribute('aria-expanded', String(o)); };
+$('#bFinish').onclick = () => { toTwin({ type: 'finish' }); toast(`Finishing the check of ${st.row}…`); };
+$('#bTorch').onclick = async () => { const on = $('#bTorch').getAttribute('aria-pressed') !== 'true'; try { await cam.track.applyConstraints({ advanced: [{ torch: on }] }); $('#bTorch').setAttribute('aria-pressed', String(on)); } catch (e) { toast('The torch is not available'); } };
+$('#bFlip').onclick = () => { if (cam.devices.length < 2) return; cam.idx = (cam.idx + 1) % cam.devices.length; cam.tried = true; startCamera(cam.devices[cam.idx].deviceId); };
+$('#manual').addEventListener('submit', e => { e.preventDefault(); const i = $('#manualIn'); const v = i.value.trim(); if (!v) return; i.value = ''; const c = classify(v); hit({ x: innerWidth / 2, y: innerHeight / 2 }); accept(v, c, 'typed'); });
+// pinch to zoom, double tap to jump 1x / 2x, tap to focus
+const ptrs = new Map(); let pinch = null, lastTap = 0;
+const stage = $('#stage');
+stage.addEventListener('pointerdown', e => { if (e.target.closest('.top,.bottom,.zoom,.card,.gate,.ctx')) return; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: zm.z, fx: (a.x + b.x) / 2 / innerWidth, fy: (a.y + b.y) / 2 / innerHeight }; } });
+stage.addEventListener('pointermove', e => { if (!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (pinch && ptrs.size === 2) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); zm.manual = true; zm.auto = false; setZoom(pinch.z * d / pinch.d, pinch.fx, pinch.fy, true); } });
+const up = e => {
+  if (!ptrs.has(e.pointerId)) return; ptrs.delete(e.pointerId); if (pinch) { if (ptrs.size < 2) pinch = null; return; }
+  const now = Date.now(); if (now - lastTap < 300) { lastTap = 0; const z = zm.z > 1.4 ? 1 : 2; zm.manual = z > 1; zm.auto = false; setZoom(z, e.clientX / innerWidth, e.clientY / innerHeight); return; }
+  lastTap = now; pulseRing(e.clientX, e.clientY); focusAt(e.clientX, e.clientY);
+};
+stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+async function focusAt(x, y) { if (!cam.track || !cam.caps.focusMode) return; const v = s2v(x, y); const poi = { x: Math.max(0, Math.min(1, v.x / V.videoWidth)), y: Math.max(0, Math.min(1, v.y / V.videoHeight)) }; try { await cam.track.applyConstraints({ advanced: [{ pointsOfInterest: [poi], focusMode: cam.caps.focusMode.includes('single-shot') ? 'single-shot' : 'continuous' }] }); } catch (e) { } }
+// a handheld scanner paired with the phone types codes followed by Enter: take those too
+let kb = '', kbT = 0;
+document.addEventListener('keydown', e => { if (e.target.closest && e.target.closest('input')) return; if (e.key === 'Enter') { if (kb.length >= 3) { const c = classify(kb); hit({ x: innerWidth / 2, y: innerHeight / 2 }); accept(kb, c, 'keyboard'); } kb = ''; return; } if (e.key.length === 1) { const n = Date.now(); if (n - kbT > 120) kb = ''; kbT = n; kb += e.key; } });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { stopCamera(); } else if (!cam.running && $('#gate').hidden) { startCamera(cam.devices[cam.idx] ? cam.devices[cam.idx].deviceId : null); } });
+addEventListener('resize', () => { placeHint(); drawHUD(); });
+setInterval(() => { if (twin && twin.closed) twinLost(); }, 1500);
+
+// ---------- start ----------
+renderModes(); setMode(st.mode); renderCtx(); renderTray(); placeHint();
+if (twin) sayReady();
+initEngines(); gate('start'); startCamera();
+</script>
+</body>
+</html>
